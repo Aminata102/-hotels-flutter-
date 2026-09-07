@@ -29,8 +29,36 @@ class ChambreMenage {
       numero: json['numero']?.toString() ?? '',
       type: json['type']?.toString() ?? 'Simple',
       etage: int.tryParse(json['etage']?.toString() ?? '1') ?? 1,
-      statut: (json['statut'] ?? 'disponible').toString(),
+      statut: _mapStatutBackend((json['statut_nettoyage'] ?? json['statut'] ?? 'propre').toString()),
     );
+  }
+
+  static String _mapStatutBackend(String raw) {
+    switch (raw.toLowerCase().trim()) {
+      case 'sale':
+      case 'en_cours':
+        return 'nettoyage';
+      case 'propre':
+        return 'disponible';
+      case 'inspection':
+        return 'maintenance';
+      default:
+        return raw;
+    }
+  }
+
+  /// Convertit le statut UI Flutter vers la valeur attendue par le backend Laravel
+  static String mapStatutToBackend(String statutLocal) {
+    switch (statutLocal) {
+      case 'nettoyage':
+        return 'sale';
+      case 'disponible':
+        return 'propre';
+      case 'maintenance':
+        return 'inspection';
+      default:
+        return statutLocal;
+    }
   }
 }
 
@@ -52,7 +80,7 @@ class _HousekeepingScreenState extends State<HousekeepingScreen> {
   bool _loading = true;
   String _filtre = 'À nettoyer'; // À nettoyer / Propres / Toutes
 
-  // Stockage local temporaire (pas encore d'API dédiée) :
+  // Stockage local temporaire :
   final List<Map<String, dynamic>> _incidentsSignales = [];
   int _nettoyeesAujourdHui = 0;
 
@@ -137,12 +165,18 @@ class _HousekeepingScreenState extends State<HousekeepingScreen> {
     final ancienStatut = chambre.statut;
     setState(() => chambre.statut = nouveauStatut); // optimiste
 
+    // Conversion de la valeur UI ('nettoyage') vers la valeur backend ('sale')
+    final statutBackend = ChambreMenage.mapStatutToBackend(nouveauStatut);
+
     try {
       final res = await http
           .put(
         Uri.parse('$_baseUrl/chambres/${chambre.id}'),
         headers: _headers,
-        body: jsonEncode({'statut': nouveauStatut}),
+        body: jsonEncode({
+          'statut': statutBackend,
+          'statut_nettoyage': statutBackend,
+        }),
       )
           .timeout(const Duration(seconds: 15));
 
@@ -159,6 +193,7 @@ class _HousekeepingScreenState extends State<HousekeepingScreen> {
           );
         }
       } else {
+        debugPrint("Erreur réponse backend (${res.statusCode}) : ${res.body}");
         setState(() => chambre.statut = ancienStatut); // rollback
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -184,7 +219,6 @@ class _HousekeepingScreenState extends State<HousekeepingScreen> {
       case 'À nettoyer':
         return _chambres.where((c) => c.statut == 'nettoyage').toList();
       case 'Propres':
-      // Affiche les chambres prêtes/disponibles et propres
         return _chambres.where((c) => c.statut == 'propre' || c.statut == 'disponible').toList();
       default:
         return _chambres;
@@ -371,7 +405,7 @@ class _HousekeepingScreenState extends State<HousekeepingScreen> {
             Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: kGreen.withOpacity(0.1),
+                  backgroundColor: kGreen.withValues(alpha: 0.1),
                   child: Text(c.numero, style: const TextStyle(color: kGreen, fontWeight: FontWeight.bold, fontSize: 12)),
                 ),
                 const SizedBox(width: 12),
@@ -386,7 +420,7 @@ class _HousekeepingScreenState extends State<HousekeepingScreen> {
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: badgeColor.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+                  decoration: BoxDecoration(color: badgeColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
                   child: Text(label, style: TextStyle(color: badgeColor, fontSize: 11, fontWeight: FontWeight.bold)),
                 ),
               ],
@@ -394,7 +428,6 @@ class _HousekeepingScreenState extends State<HousekeepingScreen> {
             const SizedBox(height: 12),
             Row(
               children: [
-                // BOUTON ACTION PRINCIPAL : Valider le nettoyage -> Passe la chambre à "disponible"
                 if (c.statut == 'nettoyage')
                   Expanded(
                     child: ElevatedButton.icon(
@@ -408,7 +441,6 @@ class _HousekeepingScreenState extends State<HousekeepingScreen> {
                       ),
                     ),
                   ),
-                // SI DEJA DISPONIBLE OU PROPRE : Possibilité de repasser en nettoyage en cas de besoin
                 if (c.statut == 'disponible' || c.statut == 'propre')
                   Expanded(
                     child: OutlinedButton.icon(
@@ -563,6 +595,7 @@ class _HousekeepingScreenState extends State<HousekeepingScreen> {
                       });
 
                       Navigator.pop(ctx);
+                      descCtrl.dispose();
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text("🚨 Incident signalé pour la chambre ${c.numero}"),
