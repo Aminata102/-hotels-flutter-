@@ -20,13 +20,6 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
   List<Map<String, dynamic>> toutesLesChambres = [];  // Toutes les chambres
   List<dynamic> mesReservations = [];
 
-  final Map<String, String> filtresStatut = const {
-    'Confirmées': 'Confirmée',
-    'En attente': 'En attente',
-    'Check-in': 'Check-in',
-    'Annulées': 'Annulée',
-  };
-
   final TextEditingController nomController = TextEditingController();
   final TextEditingController telController = TextEditingController();
   final TextEditingController cniController = TextEditingController();
@@ -45,9 +38,9 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
   DateTime dateArrivee = DateTime.now();
   DateTime dateDepart = DateTime.now().add(const Duration(days: 2));
 
-  // 🔴 VÉRIFICATION STRICTE DE PRIVILÈGE (SÉCURITÉ ROBUSTE & EXCLUSION DU CAISSIER)
+  // 🔴 VÉRIFICATION STRICTE DE PRIVILÈGE
   bool get _peutGererReservations {
-    if (widget.user.isEmpty) return false; // 🔴 Par défaut refusé
+    if (widget.user.isEmpty) return false;
 
     final rawUser = widget.user['user'] ?? widget.user;
     final rawRole = rawUser['role'] ?? rawUser['roles'] ?? rawUser['role_name'] ?? rawUser['type'] ?? rawUser['profil'];
@@ -63,9 +56,8 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
 
     roleStr = roleStr.toLowerCase().trim();
 
-    if (roleStr.isEmpty) return false; // 🔴 Par défaut refusé si rôle non spécifié
+    if (roleStr.isEmpty) return false;
 
-    // 🟢 Autorisé UNIQUEMENT pour Réceptionniste, Admin, Gérant (EXCLUT explicitement le Caissier)
     return roleStr.contains('admin') ||
         roleStr.contains('gerant') ||
         roleStr.contains('gérant') ||
@@ -110,10 +102,48 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
     return uniques.values.toList();
   }
 
-  // ─────────────────────────────────────────────
-  // Helper générique : extrait une List peu importe
-  // que l'API renvoie [...] ou {"data": [...]} etc.
-  // ─────────────────────────────────────────────
+  /// Filtre les réservations selon l'onglet sélectionné :
+  /// - "Toutes"     : toutes les réservations, quel que soit le paiement (payé, non payé, partiel)
+  /// - "Confirmées" : réservations entièrement payées (validées)
+  /// - "En attente" : réservations non payées OU avec un solde restant (paiement partiel)
+  /// - "Check-in"   : séjours terminés, càd le client a déjà quitté l'hôtel
+  ///                  (date de départ passée, ou statut explicitement marqué comme
+  ///                  terminé/check-out côté backend)
+  List<dynamic> get _reservationsSelonOnglet {
+    switch (selectedFilter) {
+      case 'Confirmées':
+        return mesReservations.where((r) {
+          final statutPaiement = (r['statut_paiement'] ?? '').toString();
+          return statutPaiement == 'Payé';
+        }).toList();
+
+      case 'En attente':
+        return mesReservations.where((r) {
+          final statutPaiement = (r['statut_paiement'] ?? '').toString();
+          return statutPaiement == 'Non payé' || statutPaiement == 'Partiel';
+        }).toList();
+
+      case 'Check-in':
+        return mesReservations.where((r) {
+          final statut = (r['statut'] ?? '').toString();
+          final depart = DateTime.tryParse(r['date_depart']?.toString() ?? '');
+          final estTermineParStatut =
+              statut == 'Terminée' || statut == 'Terminé' || statut == 'Check-out';
+          final estTermineParDate = depart != null && depart.isBefore(DateTime.now());
+          return estTermineParStatut || estTermineParDate;
+        }).toList();
+
+      case 'Annulées':
+        return mesReservations.where((r) {
+          final statut = (r['statut'] ?? '').toString();
+          return statut == 'Annulée' || statut == 'Annulé';
+        }).toList();
+
+      default: // 'Toutes'
+        return mesReservations;
+    }
+  }
+
   List<dynamic> _extraireListe(dynamic decoded, List<String> cles) {
     if (decoded is List) return decoded;
     if (decoded is Map<String, dynamic>) {
@@ -150,8 +180,6 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
             }).toList();
           });
         }
-      } else {
-        print("Erreur HTTP chambres : ${response.statusCode}");
       }
     } catch (e) {
       print("Erreur de récupération des chambres : $e");
@@ -174,36 +202,36 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
             mesReservations = data;
           });
         }
-      } else {
-        print("Erreur HTTP réservations : ${response.statusCode}");
       }
     } catch (e) {
       print("❌ Erreur de récupération : $e");
     }
   }
 
-  Future<void> _soumettreReservation() async {
-    // Verrouillage de sécurité supplémentaire côté client
+  Future<void> _soumettreReservation(
+      BuildContext modalContext,
+      StateSetter setModalState,
+      Function(String?) setErrorMessage,
+      ) async {
     if (!_peutGererReservations) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("❌ Accès refusé : Le rôle caissier ne peut pas effectuer de réservation."),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
+      setModalState(() {
+        setErrorMessage("❌ Accès refusé : Le rôle caissier ne peut pas effectuer de réservation.");
+      });
       return;
     }
 
     if (nomController.text.trim().isEmpty || selectedChambreId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Veuillez remplir le nom du client et choisir une chambre"),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      setModalState(() {
+        setErrorMessage("Veuillez remplir le nom du client et choisir une chambre.");
+      });
       return;
     }
 
+    // Réinitialiser le message d'erreur et activer l'indicateur de chargement
+    setModalState(() {
+      setErrorMessage(null);
+      submittingReservation = true;
+    });
     setState(() => submittingReservation = true);
 
     final isEdit = reservationEnEdition != null;
@@ -244,18 +272,20 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
           ? await http.put(Uri.parse(url), headers: _headers, body: body)
           : await http.post(Uri.parse(url), headers: _headers, body: body);
 
+      if (!mounted) return;
+
       if (response.statusCode == 200 || response.statusCode == 201) {
-        if (mounted) {
-          Navigator.pop(context);
-          fetchReservations();
-          fetchChambres();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(isEdit ? "Réservation modifiée avec succès !" : "Réservation enregistrée avec succès !"),
-              backgroundColor: const Color(0xFF0F6E56),
-            ),
-          );
-        }
+        Navigator.pop(modalContext); // Fermer le modal
+        fetchReservations();
+        fetchChambres();
+
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isEdit ? "Réservation modifiée avec succès !" : "Réservation enregistrée avec succès !"),
+            backgroundColor: const Color(0xFF0F6E56),
+          ),
+        );
       } else {
         String messageErreur = "Erreur serveur : ${response.statusCode}";
 
@@ -277,35 +307,28 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
           }
         } catch (_) {}
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("❌ $messageErreur"),
-              backgroundColor: Colors.redAccent,
-              duration: const Duration(seconds: 4),
-            ),
-          );
-        }
+        // 🔴 Injection de l'erreur dans le modal
+        setModalState(() {
+          setErrorMessage(messageErreur);
+        });
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Erreur de connexion au serveur : $e"),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
+        setModalState(() {
+          setErrorMessage("Erreur de connexion au serveur : $e");
+        });
       }
     } finally {
-      if (mounted) setState(() => submittingReservation = false);
+      if (mounted) {
+        setState(() => submittingReservation = false);
+        setModalState(() => submittingReservation = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final reservationsParStatut = selectedFilter == 'Toutes'
-        ? mesReservations
-        : mesReservations.where((r) => r['statut'] == (filtresStatut[selectedFilter] ?? selectedFilter)).toList();
+    final reservationsParStatut = _reservationsSelonOnglet;
 
     final q = searchQuery.trim().toLowerCase();
     final reservationsFiltrees = q.isEmpty
@@ -702,6 +725,7 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
         await fetchReservations();
         await fetchChambres();
         if (!mounted) return;
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("🗑️ Réservation supprimée"), backgroundColor: Colors.redAccent),
         );
@@ -711,9 +735,11 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
     }
   }
 
-  // --- LE MODAL DE SAISIE COMPLET ---
+  // --- LE MODAL DE SAISIE COMPLET ET CORRIGÉ ---
   void _showAddReservationModal() {
     if (!_peutGererReservations) return;
+
+    String? errorMessage; // 🔴 Variable pour l'affichage de l'erreur dans le modal
 
     showModalBottomSheet(
       context: context,
@@ -775,7 +801,23 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // 1. NOM DU CLIENT
+                  if (errorMessage != null)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Text(
+                        errorMessage!,
+                        style: TextStyle(color: Colors.red.shade800, fontSize: 13),
+                      ),
+                    ),
+
+                  // 1. NOM DU CLIENT (Autocomplete)
                   Autocomplete<Map<String, String>>(
                     textEditingController: nomController,
                     focusNode: nomFocusNode,
@@ -837,24 +879,31 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
                   // 3. SÉLECTION DE LA CHAMBRE
                   DropdownButtonFormField<String>(
                     value: selectedChambreId,
+                    isExpanded: true, // ✅ FIX : évite l'overflow quand le texte de la chambre est long
                     decoration: InputDecoration(
-                      labelText: "Chambre disponible",
-                      prefixIcon: const Icon(Icons.meeting_room_outlined, color: Colors.grey),
+                      labelText: "Chambre",
+                      prefixIcon: const Icon(Icons.king_bed_outlined, color: Colors.grey),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
                     ),
-                    items: mesChambres.map((c) {
+                    items: mesChambres.map((chambre) {
                       return DropdownMenuItem<String>(
-                        value: c['id'].toString(),
-                        child: Text("Ch. ${c['numero']} (${c['type']}) - ${c['prix']} F/nuit"),
+                        value: chambre['id'].toString(),
+                        child: Text(
+                          "Chambre ${chambre['numero']} (${chambre['type']}) - ${chambre['prix']} FCFA",
+                          overflow: TextOverflow.ellipsis, // ✅ FIX : tronque proprement si trop long
+                          maxLines: 1,
+                        ),
                       );
                     }).toList(),
                     onChanged: (val) {
-                      setModalState(() => selectedChambreId = val);
+                      setModalState(() {
+                        selectedChambreId = val;
+                      });
                     },
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
 
-                  // 3.5 DATES D'ARRIVÉE ET DE DÉPART
+                  // 4. DATES D'ARRIVÉE ET DÉPART
                   Row(
                     children: [
                       Expanded(
@@ -863,14 +912,13 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
                             final picked = await showDatePicker(
                               context: modalContext,
                               initialDate: dateArrivee,
-                              firstDate: DateTime.now().subtract(const Duration(days: 1)),
+                              firstDate: DateTime.now().subtract(const Duration(days: 30)),
                               lastDate: DateTime.now().add(const Duration(days: 365)),
                             );
                             if (picked != null) {
                               setModalState(() {
                                 dateArrivee = picked;
-                                // Empêche une date de départ antérieure à l'arrivée
-                                if (!dateDepart.isAfter(dateArrivee)) {
+                                if (dateDepart.isBefore(dateArrivee)) {
                                   dateDepart = dateArrivee.add(const Duration(days: 1));
                                 }
                               });
@@ -879,13 +927,10 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
                           child: InputDecorator(
                             decoration: InputDecoration(
                               labelText: "Arrivée",
-                              prefixIcon: const Icon(Icons.calendar_today_outlined, color: Colors.grey, size: 18),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                              prefixIcon: const Icon(Icons.calendar_today, color: Colors.grey),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            child: Text(
-                              "${dateArrivee.day}/${dateArrivee.month}/${dateArrivee.year}",
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                            ),
+                            child: Text("${dateArrivee.day}/${dateArrivee.month}/${dateArrivee.year}"),
                           ),
                         ),
                       ),
@@ -895,34 +940,93 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
                           onTap: () async {
                             final picked = await showDatePicker(
                               context: modalContext,
-                              initialDate: dateDepart.isAfter(dateArrivee) ? dateDepart : dateArrivee.add(const Duration(days: 1)),
-                              firstDate: dateArrivee.add(const Duration(days: 1)),
+                              initialDate: dateDepart,
+                              firstDate: dateArrivee,
                               lastDate: DateTime.now().add(const Duration(days: 365)),
                             );
                             if (picked != null) {
-                              setModalState(() => dateDepart = picked);
+                              setModalState(() {
+                                dateDepart = picked;
+                              });
                             }
                           },
                           child: InputDecorator(
                             decoration: InputDecoration(
                               labelText: "Départ",
-                              prefixIcon: const Icon(Icons.calendar_today_outlined, color: Colors.grey, size: 18),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+                              prefixIcon: const Icon(Icons.calendar_today, color: Colors.grey),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            child: Text(
-                              "${dateDepart.day}/${dateDepart.month}/${dateDepart.year}",
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                            ),
+                            child: Text("${dateDepart.day}/${dateDepart.month}/${dateDepart.year}"),
                           ),
                         ),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 12),
+
+                  // 5. ADULTES ET ENFANTS
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: nombreAdultes,
+                          decoration: InputDecoration(
+                            labelText: "Adultes",
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          items: List.generate(5, (i) => i + 1)
+                              .map((n) => DropdownMenuItem(value: n, child: Text("$n adulte(s)")))
+                              .toList(),
+                          onChanged: (val) => setModalState(() => nombreAdultes = val ?? 1),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          value: nombreEnfants,
+                          decoration: InputDecoration(
+                            labelText: "Enfants",
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          items: List.generate(6, (i) => i)
+                              .map((n) => DropdownMenuItem(value: n, child: Text("$n enfant(s)")))
+                              .toList(),
+                          onChanged: (val) => setModalState(() => nombreEnfants = val ?? 0),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 6. MODE DE PAIEMENT
+                  DropdownButtonFormField<String>(
+                    value: modePaiement,
+                    decoration: InputDecoration(
+                      labelText: "Mode de paiement",
+                      prefixIcon: const Icon(Icons.payment, color: Colors.grey),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    items: modesPaiement
+                        .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                        .toList(),
+                    onChanged: (val) => setModalState(() => modePaiement = val ?? 'Espèces'),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 7. NOTE / REMARQUE
+                  TextField(
+                    controller: noteController,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      labelText: "Note (optionnel)",
+                      prefixIcon: const Icon(Icons.note_outlined, color: Colors.grey),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
                   const SizedBox(height: 16),
 
-                  // 4. RÉSUMÉ DU MONTANT
+                  // RECAPITULATIF DU PRIX
                   Container(
-                    width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: const Color(0xFF0F6E56).withOpacity(0.08),
@@ -931,31 +1035,50 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text("$nuits nuit(s) calculée(s)", style: const TextStyle(fontWeight: FontWeight.w500)),
+                        Text("$nuits nuit(s) × ${prixBase.toStringAsFixed(0)} FCFA",
+                            style: const TextStyle(fontSize: 13, color: Colors.black87)),
                         Text(
                           "${montantTotal.toStringAsFixed(0)} FCFA",
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F6E56), fontSize: 16),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F6E56)),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 20),
 
-                  // 5. BOUTON VALIDER
+                  // BOUTON DE SOUMISSION
                   SizedBox(
                     width: double.infinity,
                     height: 48,
                     child: ElevatedButton(
-                      onPressed: submittingReservation ? null : _soumettreReservation,
+                      onPressed: submittingReservation
+                          ? null
+                          : () => _soumettreReservation(
+                        modalContext,
+                        setModalState,
+                            (msg) => errorMessage = msg,
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF0F6E56),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                       child: submittingReservation
-                          ? const CircularProgressIndicator(color: Colors.white)
+                          ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
                           : Text(
                         reservationEnEdition == null ? "Enregistrer la réservation" : "Mettre à jour",
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),

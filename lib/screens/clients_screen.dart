@@ -99,7 +99,6 @@ class _ClientsScreenState extends State<ClientsScreen> {
   bool get _canManageClients {
     if (widget.user == null || widget.user!.isEmpty) return false;
 
-    // Récupération sécurisée du champ 'role'
     final rawUser = widget.user!['user'] ?? widget.user!;
     final rawRole = rawUser['role'] ?? rawUser['role_name'] ?? rawUser['type'] ?? rawUser['profil'];
 
@@ -113,12 +112,10 @@ class _ClientsScreenState extends State<ClientsScreen> {
 
     roleStr = roleStr.toLowerCase().trim();
 
-    // 1. Bloquer explicitement le caissier et le personnel d'entretien
     if (roleStr == 'caissier' || roleStr == 'housekeeping' || roleStr.contains('caissier')) {
       return false;
     }
 
-    // 2. Autoriser uniquement Administrateur, Réceptionniste et Gérant
     return roleStr.contains('admin') ||
         roleStr.contains('gerant') ||
         roleStr.contains('gérant') ||
@@ -233,9 +230,13 @@ class _ClientsScreenState extends State<ClientsScreen> {
             (selectedFilter == 'En séjour' && c.statut == 'en_sejour') ||
             (selectedFilter == 'Fidèles' && (c.nombreSejours ?? 0) >= 3) ||
             (selectedFilter == 'Sénégalais' &&
-                (c.nationalite?.toLowerCase() == 'sénégalaise' ||
+                (c.nationalite?.toLowerCase() == 'sénégal' ||
+                    c.nationalite?.toLowerCase() == 'senegal' ||
+                    c.nationalite?.toLowerCase() == 'sénégalaise' ||
                     c.nationalite?.toLowerCase() == 'senegalaise')) ||
             (selectedFilter == 'Étrangers' &&
+                c.nationalite?.toLowerCase() != 'sénégal' &&
+                c.nationalite?.toLowerCase() != 'senegal' &&
                 c.nationalite?.toLowerCase() != 'sénégalaise' &&
                 c.nationalite?.toLowerCase() != 'senegalaise' &&
                 c.nationalite != null);
@@ -248,11 +249,11 @@ class _ClientsScreenState extends State<ClientsScreen> {
   void _loadDemo() {
     final demoClients = [
       Client(id: '1', nom: 'Ndiaye', prenom: 'Aby', telephone: '+221 77 345 67 89',
-          statut: 'en_sejour', nationalite: 'Sénégalaise', ville: 'Dakar',
+          statut: 'en_sejour', nationalite: 'Sénégal', ville: 'Dakar',
           chambre: '07', typeChambre: 'Suite', dateDepart: '17 avr.',
           statutPaiement: 'du', nombreSejours: 1),
       Client(id: '2', nom: 'Kon', prenom: 'Oabu', telephone: '+221 76 123 45 67',
-          statut: 'recent', nationalite: 'Sénégalaise', ville: 'Thiès',
+          statut: 'recent', nationalite: 'Sénégal', ville: 'Thiès',
           nombreSejours: 2),
     ];
     setState(() {
@@ -544,6 +545,8 @@ class _ClientsScreenState extends State<ClientsScreen> {
     if (c.statutPaiement == 'du') badges.add(_badge("Paiement dû", Colors.orange));
     if ((c.nombreSejours ?? 0) >= 3) badges.add(_badge("Fidèle", Colors.deepPurple));
     if (c.nationalite != null &&
+        c.nationalite!.toLowerCase() != 'sénégal' &&
+        c.nationalite!.toLowerCase() != 'senegal' &&
         c.nationalite!.toLowerCase() != 'sénégalaise' &&
         c.nationalite!.toLowerCase() != 'senegalaise') {
       badges.add(_badge("Étranger", Colors.grey));
@@ -636,11 +639,20 @@ class _NouveauClientSheetState extends State<_NouveauClientSheet> {
   final _emailCtrl = TextEditingController();
   final _cniCtrl = TextEditingController();
   final _villeCtrl = TextEditingController();
-  String _nationalite = 'Sénégalaise';
 
-  final List<String> _nationalites = [
-    'Sénégalaise', 'Malienne', 'Guinéenne', 'Ivoirienne',
-    'Mauritanienne', 'Gambienne', 'Française', 'Autre',
+  // Valeur par défaut mise à jour vers 'Sénégal'
+  String _pays = 'Sénégal';
+
+  // Liste remplacée par les noms de pays
+  final List<String> _paysList = [
+    'Sénégal',
+    'Mali',
+    'Guinée',
+    'Côte d\'Ivoire',
+    'Mauritanie',
+    'Gambie',
+    'France',
+    'Autre',
   ];
 
   @override
@@ -664,7 +676,7 @@ class _NouveauClientSheetState extends State<_NouveauClientSheet> {
       'telephone': _telCtrl.text.trim(),
       'email': _emailCtrl.text.trim(),
       'numero_cni': _cniCtrl.text.trim(),
-      'nationalite': _nationalite,
+      'nationalite': _pays, // Envoie le pays sélectionné
       'ville': _villeCtrl.text.trim(),
     });
 
@@ -767,10 +779,11 @@ class _NouveauClientSheetState extends State<_NouveauClientSheet> {
                     ),
                     const SizedBox(height: 16),
 
+                    // Champ déroulant mis à jour avec le label 'Pays' et la liste des pays
                     DropdownButtonFormField<String>(
-                      value: _nationalite,
+                      value: _pays,
                       decoration: InputDecoration(
-                        labelText: 'Nationalité',
+                        labelText: 'Pays',
                         prefixIcon: const Icon(Icons.flag_outlined, color: kGreen),
                         filled: true,
                         fillColor: Colors.grey[50],
@@ -784,10 +797,10 @@ class _NouveauClientSheetState extends State<_NouveauClientSheet> {
                             borderRadius: BorderRadius.circular(12),
                             borderSide: const BorderSide(color: kGreen, width: 2)),
                       ),
-                      items: _nationalites
-                          .map((n) => DropdownMenuItem(value: n, child: Text(n)))
+                      items: _paysList
+                          .map((p) => DropdownMenuItem(value: p, child: Text(p)))
                           .toList(),
-                      onChanged: (v) => setState(() => _nationalite = v ?? _nationalite),
+                      onChanged: (v) => setState(() => _pays = v ?? _pays),
                     ),
                     const SizedBox(height: 16),
 

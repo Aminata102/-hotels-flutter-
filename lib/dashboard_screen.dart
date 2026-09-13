@@ -41,8 +41,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _loading = true;
 
   bool get _peutVoirCaisse {
-    final role = widget.user['role']?.toString().toLowerCase().trim();
-    return CaissePermissions.peutAccederCaisse(role) || role == 'administrateur';
+    final role = _roleStr;
+    return CaissePermissions.peutAccederCaisse(role) || role.contains('caissier') || role.contains('caisse') || role.contains('administrateur') || role.contains('admin');
   }
 
   // Extraction du rôle brut (réutilisée par les getters de permissions)
@@ -69,6 +69,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _roleStr.contains('femme de chambre');
   }
 
+  // 💳 Rôle Caissier : restreint la vue aux onglets Accueil, Caisse et Params
+  bool get _estCaissier {
+    return _roleStr.contains('caissier') || _roleStr.contains('caisse');
+  }
+
   // 👑 Admin / Gérant : accès total, y compris l'onglet Ménage
   bool get _estAdminOuGerant {
     return _roleStr.contains('admin') || _roleStr.contains('gerant') || _roleStr.contains('gérant');
@@ -77,9 +82,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late final List<_NavEntry> _navEntries = _buildNavEntries();
 
   List<_NavEntry> _buildNavEntries() {
-    // 🧹 Navigation restreinte pour le personnel de ménage :
-    // uniquement Accueil, Ménage et Paramètres (accès chambres/réservations/
-    // clients/caisse gérés ailleurs et non pertinents pour ce rôle).
+    // 🧹 Navigation restreinte pour le personnel de ménage
     if (_estMenage) {
       return [
         _NavEntry(icon: Icons.grid_view_rounded, label: 'Accueil', builder: () => _buildHomeContent()),
@@ -92,9 +95,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ];
     }
 
+    // 💳 Navigation restreinte pour le rôle Caissier :
+    // Uniquement Accueil, Caisse et Paramètres
+    if (_estCaissier) {
+      return [
+        _NavEntry(icon: Icons.grid_view_rounded, label: 'Accueil', builder: () => _buildHomeContent()),
+        _NavEntry(
+          icon: Icons.point_of_sale,
+          label: 'Caisse',
+          builder: () => CaisseScreen(token: widget.token, user: widget.user),
+        ),
+        _NavEntry(icon: Icons.settings_outlined, label: 'Params', builder: () => ParametresScreen(user: widget.user, token: widget.token)),
+      ];
+    }
+
+    // 🔵 Navigation complète (Admin, Gérant, Réceptionniste, etc.)
     final entries = <_NavEntry>[
       _NavEntry(icon: Icons.grid_view_rounded, label: 'Accueil', builder: () => _buildHomeContent()),
-      // ✅ FIX ICI : Transmission de user: widget.user à ChambresScreen
       _NavEntry(icon: Icons.bed_outlined, label: 'Chambres', builder: () => ChambresScreen(token: widget.token, user: widget.user)),
       _NavEntry(icon: Icons.calendar_month, label: 'Réservations', builder: () => ReservationsScreen(token: widget.token, user: widget.user)),
       _NavEntry(icon: Icons.people_outline, label: 'Clients', builder: () => ClientsScreen(token: widget.token, user: widget.user)),
@@ -353,6 +370,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
             children: [
               if (idxMenage != -1)
                 _quickActionItem(Icons.cleaning_services_outlined, "Ménage", idxMenage),
+            ],
+          ),
+        ],
+      );
+    }
+
+    // 💳 Accès rapide adapté au rôle caissier
+    if (_estCaissier) {
+      final idxCaisse = _indexOf('Caisse');
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("Accès rapide", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              if (idxCaisse != -1)
+                _quickActionItem(Icons.point_of_sale, "Caisse", idxCaisse),
             ],
           ),
         ],

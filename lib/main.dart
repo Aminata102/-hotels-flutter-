@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 import 'dashboard_screen.dart';
 
 void main() {
-
   runApp(MyApp());
 }
 
@@ -20,7 +19,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'AfricaQueen SN',
       theme: ThemeData(
-        primaryColor: Color(0xFF176F54),
+        primaryColor: const Color(0xFF176F54),
         fontFamily: 'Roboto',
       ),
       home: LoginPage(),
@@ -35,14 +34,12 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final Color primaryGreen = Color(0xFF176F54);
+  final Color primaryGreen = const Color(0xFF176F54);
   final TextEditingController emailController    = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
   bool _isLoading       = false;
   bool _obscurePassword = true;
-
-
 
   @override
   void dispose() {
@@ -65,32 +62,29 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/auth/login'),   // ✅ URL corrigée
-        headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+        Uri.parse('$baseUrl/auth/login'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
         body: jsonEncode({'email': email, 'password': password}),
-      ).timeout(Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 10));
 
       final data = jsonDecode(response.body);
 
-      if (response.statusCode == 200 && data['success'] == true) {
+      if (response.statusCode == 200 && (data['success'] == true || data['token'] != null)) {
         final token = data['token'] as String;
-        final user  = data['user'];
+        final user = Map<String, dynamic>.from(data['user'] ?? {});
 
-        // ✅ CORRECTION — ne pas accéder à user['hotel']['nom']
-        // Laravel retourne hotel_id, pas l'objet hotel complet
         final prenom = user['prenom'] ?? '';
         final nom    = user['nom'] ?? '';
 
         print('✅ TOKEN: $token');
-        print('👤 Utilisateur: $prenom $nom — ${user['role']}');
-
-        // ✅ Message sans hotel
-        //_showSnack('Bienvenue $prenom $nom !');
-
-        await Future.delayed(const Duration(milliseconds: 800));
+        print('👤 Utilisateur: $prenom $nom — Rôle: ${user['role']}');
 
         if (!mounted) return;
 
+        // Redirection vers le Dashboard avec transmission du token et du user
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -102,10 +96,12 @@ class _LoginPageState extends State<LoginPage> {
         _showSnack(message, isError: true);
       }
     } on Exception catch (e) {
-      print('❌ Erreur: $e');
+      print('❌ Erreur de connexion: $e');
       _showSnack('Impossible de joindre le serveur. Vérifiez que Laravel tourne.', isError: true);
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -117,7 +113,6 @@ class _LoginPageState extends State<LoginPage> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ));
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -131,7 +126,7 @@ class _LoginPageState extends State<LoginPage> {
             width: double.infinity,
             decoration: BoxDecoration(
               color: primaryGreen,
-              borderRadius: BorderRadius.only(
+              borderRadius: const BorderRadius.only(
                 bottomLeft: Radius.circular(30),
                 bottomRight: Radius.circular(30),
               ),
@@ -141,16 +136,16 @@ class _LoginPageState extends State<LoginPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    padding: EdgeInsets.all(20),
+                    padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
                       border: Border.all(color: Colors.white30),
                       borderRadius: BorderRadius.circular(20),
                       color: Colors.white12,
                     ),
-                    child: Icon(Icons.hotel, color: Colors.white, size: 40),
+                    child: const Icon(Icons.hotel, color: Colors.white, size: 40),
                   ),
-                  SizedBox(height: 15),
-                  Text(
+                  const SizedBox(height: 15),
+                  const Text(
                     'AfricaQueen SN',
                     style: TextStyle(
                       color: Colors.white,
@@ -158,7 +153,7 @@ class _LoginPageState extends State<LoginPage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  Text(
+                  const Text(
                     'Gestion hôtelière simplifiée',
                     style: TextStyle(color: Colors.white70, fontSize: 13),
                   ),
@@ -170,17 +165,17 @@ class _LoginPageState extends State<LoginPage> {
           // ── FORMULAIRE ────────────────────────────────────
           Expanded(
             child: SingleChildScrollView(
-              padding: EdgeInsets.all(24),
+              padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Connexion',
+                  const Text('Connexion',
                       style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                  SizedBox(height: 20),
+                  const SizedBox(height: 20),
 
                   // Email
                   _label('Identifiant'),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   TextField(
                     controller: emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -189,11 +184,11 @@ class _LoginPageState extends State<LoginPage> {
                       icon: Icons.person_outline,
                     ),
                   ),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
                   // Mot de passe
                   _label('Mot de passe'),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   TextField(
                     controller: passwordController,
                     obscureText: _obscurePassword,
@@ -227,7 +222,7 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
 
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
 
                   // Bouton connexion
                   SizedBox(
@@ -243,23 +238,22 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       onPressed: _isLoading ? null : _login,
                       child: _isLoading
-                          ? SizedBox(
+                          ? const SizedBox(
                         width: 22, height: 22,
                         child: CircularProgressIndicator(
                             color: Colors.white, strokeWidth: 2),
                       )
-                          : Text('Se connecter',
+                          : const Text('Se connecter',
                           style: TextStyle(
                               fontSize: 16, fontWeight: FontWeight.w600)),
                     ),
                   ),
 
-                  SizedBox(height: 24),
+                  const SizedBox(height: 24),
 
                   Center(
                     child: Column(
                       children: [
-
                         const Text(
                           'Accès sécurisé — Hôtel Teranga · v1.0',
                           style: TextStyle(
@@ -267,28 +261,22 @@ class _LoginPageState extends State<LoginPage> {
                             fontSize: 12,
                           ),
                         ),
-
                         const SizedBox(height: 20),
-
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-
                             const Text(
                               "Vous n'avez pas de compte ?",
                               style: TextStyle(fontSize: 15),
                             ),
-
                             TextButton(
                               onPressed: () {
-
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => const RegisterScreen(),
                                   ),
                                 );
-
                               },
                               child: const Text(
                                 "Créer un compte",
@@ -299,10 +287,8 @@ class _LoginPageState extends State<LoginPage> {
                                 ),
                               ),
                             ),
-
                           ],
                         ),
-
                       ],
                     ),
                   ),
@@ -316,7 +302,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Widget _label(String text) =>
-      Text(text, style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13));
+      Text(text, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13));
 
   InputDecoration _inputDeco({
     required String hint,
@@ -330,7 +316,7 @@ class _LoginPageState extends State<LoginPage> {
         suffixIcon: suffix,
         filled: true,
         fillColor: Colors.white,
-        contentPadding: EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: Colors.grey.shade300),
@@ -341,9 +327,7 @@ class _LoginPageState extends State<LoginPage> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Color(0xFF176F54), width: 1.5),
+          borderSide: const BorderSide(color: Color(0xFF176F54), width: 1.5),
         ),
       );
-
-
 }
