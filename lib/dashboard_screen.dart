@@ -254,7 +254,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildHeader() {
     final prenom = widget.user['prenom'] ?? 'Admin';
-    final hotel  = widget.user['hotel']?['nom'] ?? 'Hôtel Teranga';
+    final hotel  = widget.user['hotel']?['nom'] ?? 'Hôtel Africa Queen';
     return Container(
       color: kGreen,
       padding: EdgeInsets.only(
@@ -271,7 +271,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 const Text('AfricaQueen SN',
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                Text('$hotel — Dakar',
+                Text('$hotel — Somone',
                     style: const TextStyle(color: Colors.white70, fontSize: 11)),
               ],
             ),
